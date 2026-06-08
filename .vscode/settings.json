@@ -1,0 +1,4 @@
+{
+    "mochaExplorer.files": "src/**/*.spec.ts",
+    "mochaExplorer.nodeArgv": ["--experimental-specifier-resolution=node", "--loader=ts-node/esm"]
+}

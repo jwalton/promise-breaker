@@ -1,0 +1,34 @@
+{
+    "compilerOptions": {
+        /* Basic Options */
+        "target": "esnext",
+        "module": "NodeNext",
+        "lib": ["es2021"],
+        "allowJs": false,
+        "declaration": true,
+        "sourceMap": true,
+        "rootDir": "src",
+        "outDir": "./dist",
+        "stripInternal": true,
+
+        /* Strict Type-Checking Options */
+        "strict": true,
+        "noImplicitAny": true,
+        "noImplicitThis": true,
+        "alwaysStrict": true,
+
+        /* Additional Checks */
+        "forceConsistentCasingInFileNames": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
+
+        /* Module Resolution Options */
+        "moduleResolution": "nodenext",
+        "typeRoots": ["./node_modules/@types", "./@types"],
+        "types": ["node"],
+        "esModuleInterop": true
+    },
+    "include": ["src"],
+    "exclude": ["**/*.spec.ts", "**/*.test.ts"],
+    "compileOnSave": true
+}

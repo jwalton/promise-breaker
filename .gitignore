@@ -1,4 +1,8 @@
-/node_modules
+node_modules
+/notes.md
+/dist
 /coverage
 /npm-debug.log
-package-lock.json
+/yarn-error.log
+/yarn.lock
+/package-lock.json

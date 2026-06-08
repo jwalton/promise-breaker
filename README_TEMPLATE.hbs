@@ -1,0 +1,59 @@
+![Build Status](https://github.com/jwalton/node-promise-breaker/workflows/GitHub%20CI/badge.svg)
+
+## What is it?
+
+`promise-breaker` is intended for library authors and makes it easy to write functions that will accept an optional callback, or return a Promise if a callback is not provided. You can use callbacks or Promises in your implementation, and callers can call with either a callback or expect a Promise. It's a library that makes it easy to write libraries for others.
+
+`promise-breaker` is also often handy when refactoring a legacy codebase that uses callbacks into something promise based. You can rewrite a callback based function into a promise based function, and then `callbackify` it, which means existing callers can still call into it, and you don't have to refactor the whole codebase in one go.
+
+## Installation
+
+```sh
+npm install --save promise-breaker
+```
+
+## Summary
+
+If you're a library author, it's nice to be able to provide your clients with a library that will take an optional callback, and if the callback isn't provided, return a Promise. If you've ever tried to do this, you know that there's a lot of finicky boilerplate involved in every function you write.
+
+'promise-breaker' makes this really easy. If you prefer writing in callback style:
+
+```js
+export const myFunc = pb.promisify((done = null) => {
+  doThing((err, thing) => {
+    if (err) {
+      return done(err);
+    }
+    doOtherThing(thing, (err, otherThing) => {
+      if (err) {
+        return done(err);
+      }
+      done(null, otherThing);
+    });
+  });
+});
+```
+
+or if you prefer Promise style:
+
+```js
+export const myFunc = pb.callbackify(() => {
+  doThing().then((result) => doOtherThing(result));
+});
+```
+
+The other thing you often want to do when writing a library is call into a function without knowing whether
+it returns a promise or expects a callback. Again, promise-breaker makes this easy:
+
+```js
+export async function doStuff(fn) {
+  // This works just like `fn.call` except it will add a `done` callback to the
+  // parameters passed to `fn`, and then automatically work out whether `fn`
+  // returns a promise or calls the callback.
+  await pb.call(fn, null, 'hello world');
+}
+```
+
+## API
+
+{{>main}}

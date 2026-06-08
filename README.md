@@ -1,239 +1,214 @@
 ![Build Status](https://github.com/jwalton/node-promise-breaker/workflows/GitHub%20CI/badge.svg)
-[![Coverage Status](https://coveralls.io/repos/jwalton/node-promise-breaker/badge.svg)](https://coveralls.io/r/jwalton/node-promise-breaker)
-[![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
 
 ## What is it?
 
-`promise-breaker` makes it easy to write functions that will accept an optional callback, or return
-a Promise if a callback is not provided.  You can use callbacks or Promises in your implementation,
-and callers can call with either a callback or expect a Promise.  It's a library that makes it easy
-to write libraries for others.
+`promise-breaker` is intended for library authors and makes it easy to write functions that will accept an optional callback, or return a Promise if a callback is not provided. You can use callbacks or Promises in your implementation, and callers can call with either a callback or expect a Promise. It's a library that makes it easy to write libraries for others.
+
+`promise-breaker` is also often handy when refactoring a legacy codebase that uses callbacks into something promise based. You can rewrite a callback based function into a promise based function, and then `callbackify` it, which means existing callers can still call into it, and you don't have to refactor the whole codebase in one go.
 
 ## Installation
 
-    npm install --save promise-breaker
-
-## Requirements
-
-This library assumes that `Promise` is a defined global variable.  If this is not the case
-on your platform, you can use a polyfill:
-
-    npm install --save es6-promise
-
-Then somewhere in your node.js application:
-
-    if(!global.Promise) {
-        global.Promise = require('es6-promise').Promise;
-    }
-
-Or in your client-side app:
-
-    if(!window.Promise) {
-        window.Promise = require('es6-promise').Promise;
-    }
-
-If you don't want to set the global, you can pass an optional Promise implementation to
-`promise-breaker`:
-
-    var MyPromise = require('es6-promise').Promise;
-    promiseBreaker = require('promise-breaker').withPromise(MyPromise);
+```sh
+npm install --save promise-breaker
+```
 
 ## Summary
 
-With the growing popularity of Promises these days, if you're a library author, it's nice to
-be able to provide your clients with a library that will take an optional callback, and if the
-callback isn't provided, return a Promise.  If you've ever tried to do this, you know that there's
-a lot of finicky boilerplate involved in every function you write.  Providing callback support is
-also pretty important if you prefer to write your library using Promises internally.
+If you're a library author, it's nice to be able to provide your clients with a library that will take an optional callback, and if the callback isn't provided, return a Promise. If you've ever tried to do this, you know that there's a lot of finicky boilerplate involved in every function you write.
 
-'promise-breaker' makes this really easy.  If you prefer writing in callback style:
+'promise-breaker' makes this really easy. If you prefer writing in callback style:
 
 ```js
-export function myFunc(done=null) {
-    return pb.addPromise(done, done => // Add this wrapper around your async function
-        doThing((err, thing) => {
-            if(err) {return done(err);}
-            doOtherThing(thing, (err, otherThing) => {
-                if(err) {return done(err);}
-                done(null, otherThing);
-            });
-        });
-    );
-}
+export const myFunc = pb.promisify((done = null) => {
+  doThing((err, thing) => {
+    if (err) {
+      return done(err);
+    }
+    doOtherThing(thing, (err, otherThing) => {
+      if (err) {
+        return done(err);
+      }
+      done(null, otherThing);
+    });
+  });
+});
 ```
 
 or if you prefer Promise style:
 
 ```js
-export function myFunc(done=null) {
-    return pb.addCallback(done, // Add this wrapper around your returned Promise.
-        doThing()
-        .then(result => doOtherThing(result))
-    );
-}
-```
-
-If you're using arrow functions or using commonjs exports, it's even easier to use
-promise-breaker to create functions that generate a Promise or accept a callback:
-
-```js
-// Both of these will take an optional `done`, and if not provided return a Promise.
-exports.myPromiseFunc = pb.break({args: 0}, () => {
-    return Promise.resolve("Hello World");
-});
-
-exports.myCbFunc = pb.make({args: 1}, done => {
-    done(null, "Hello World");
+export const myFunc = pb.callbackify(() => {
+  doThing().then((result) => doOtherThing(result));
 });
 ```
-
-The names `make()` and `break()` here come from the idea that you are making a callback into a promise, or breaking
-a promise down into a callback.  Note that `make()` and `break()` rely on the `.length` of the function you pass
-in.  In ES6, default parameters do not count towards the length of the function, so you need to explicitly tell
-promise-breaker how many parameters are expected in the `args` parameter.  If you're not using default arguments, you
-can omit the options parameter altogether, but this is a bad habit, as promise-breaker unfortunately has no way to
-detect if you get it wrong.
 
 The other thing you often want to do when writing a library is call into a function without knowing whether
-it returns a promise or expects a callback.  Again, promise-breaker makes this easy:
+it returns a promise or expects a callback. Again, promise-breaker makes this easy:
 
 ```js
-export function doStuff(fn) {
-    // This works just like `fn.call` except it will add a `done` if `fn.length` is bigger than the parameter count.
-    // So here, this will either call `fn("hello world")` and get back a Promise or `fn("hello world", done)` and
-    // convert the callback into a Promise for you.
-    pb.call(fn, null, "hello world")
-    .catch(err => console.log(err));
-}
-```
-
-Or, in callback style:
-
-```js
-export function doStuff(fn) {
-    pb.callWithCb(fn, null, "hello world", err => {
-        if(err) return console.log(err);
-    });
+export async function doStuff(fn) {
+  // This works just like `fn.call` except it will add a `done` callback to the
+  // parameters passed to `fn`, and then automatically work out whether `fn`
+  // returns a promise or calls the callback.
+  await pb.call(fn, null, 'hello world');
 }
 ```
 
 ## API
 
-### pb.make([options,] fn)
+<a name="promisify"></a>
 
-* `options.args` - In ES6, default parameters do not count towards a functions `.length`.  If your `fn`
-  uses default parameters, you must specify the total parameter count in `args`.  E.g.:
-  `const myFn = pb.make({args: 2}, (x, y=null) => ...);`  If you do not specify `args`, then promise-breaker
-  will use `fn.length` instead.
+### promisify(fn)
+Given a function that expects a callback, return a new function that accepts a
+callback or returns a promise depending on how it is called.
 
-`make()` takes a function which accepts a `callback(err, result)` as its last parameter, and
-returns a new function which accepts an optional callback as its last parameter.  If a callback is
-provided, this new function will behave exactly like the original function.  If the callback
-is not provided, then the new function will return a Promise.
+This is similar to node.js's `util.promisify` but this will generate a function
+that can be called with or without a callback, and will return a Promise either way.
+Unlike the node version of `promisify`, this version will automatically
+correctly handle the case where the function is being defined on an class.
+Also, this version is typescript compatible with any function, where the the
+`@types/node` definition only works with function with up to five parameters.
 
-Since Promises only allow a single value to be returned, if `fn` passes more than two arguments to `callback(...)`,
-then (as of v3.0.0) any arguments after the error will be transformed into an array and returned via the Promise as a
-single combined argument.  This does not affect the case where the transformed function is called with a callback.
+`promisify` works by always adding a callback onto the list of arguments
+passed down to your function.  If the caller doesn't pass a callback, this
+added callback will be passed to your function, and will be used to resolve
+or reject the returned `Promise`.  If the caller provides a callback, then
+your function will get (and ignore) the extra callback that `promisify` adds
+at the end.
 
-For example:
+Technically the function will always return a Promise, regardless of whether or
+not a callback is passed in, but if a callback is passed in the return Promise
+will never resolve (instead we call into the callback).
 
-    var myFunc = pb.make(function(callback) {
-        // We're returning multiple values via callback
-        callback(null, "a", "b");
-    })
+**Kind**: global function  
 
-    // Callback style
-    myFunc(function(err, a, b) {...});
+| Param | Description |
+| --- | --- |
+| fn | The function to promisify. |
 
-    // Promise style
-    myFunc()
-    .then(function(results) {
-        // Promises only let us return a single value, so we return an array.
-        var a = results[0];
-        var b = results[1];
-        ...
-    })
-    .catch(function(err) {...});
+<a name="callbackify"></a>
 
+### callbackify([opts], fn)
+`callbackify` is the opposite of `promisify`; it takes a function that returns
+a promise, and makes it so it can be called with either a promise or a callback.
 
-### pb.break([options,] fn)
+Callbackify works by calling the underlying function and then returning the
+promise directly, or calling into the provided callback.
 
-* `options.args` - In ES6, default parameters do not count towards a functions `.length`.  If your `fn`
-  uses default parameters, you must specify the total parameter count in `args`.  E.g.:
-  `const myFn = pb.break({args: 3}, (x, y=null, done=null) => ...);`  If you do not specify `args`,
-  then promise-breaker will use `fn.length` instead.
-
-`break(fn)` is the opposite of `make(fn)`.  `fn` here is a function which returns a Promise.
-`break(fn)` will generate a new function with an extra parameter, an optional
-`callback(err, result)`.  If no callback is provided, the generated function will behave exactly
-like the original function.  If a callback is provided, then the generated function will return
-`null`, and will pass any results that would have been returned via the Promise via the callback
-instead.
-
-### addPromise(done, fn)
-
-Used to add Promise support to a callback-based function.
-
-Calls `fn(cb)`.  If `done` is provided, it is passed directly as `cb` and `addPromise` returns undefined.  If `done`
-is not provided, `addPromise` will generate an appropriate callback and return a Promise.  If `fn` is called with
-more than two arguments (with multiple results, in other words) then the Promise will resolve to an array of results.
-
-
-Use it like this:
+In order for this to work, `callbackify` needs to detect if a callback was
+included in the parameter list and remove it for the promise case. By default,
+`callbackify` will always assume that if the last parameter passed in is a
+function, then that function is a callback function. In most cases then you can do:
 
 ```js
-export function addAsync(x, y, done=null) {
-    return pb.addPromise(done, done => done(null, x + y));
-}
+const newFunc = callbackify(async function (foo, bar) => ...);
 ```
 
-### addCallback(done, promise)
-
-Used to add callback support to a promise-based function.
-
-If `done` is not provided, returns the `promise` passed in.  If `done` is
-provided, this will wait for `promise` to resolve or reject and then call
-`done(err, result)` appropriately.  Note that `promise` can also be a
-function that takes no arguments and returns a Promise.
-
-Use it like this:
+But, sometimes you might want to `callbackify` a function that takes a
+non-callback function as it's final parameter.  In this case, you need to
+specify the number of arguments the function you're trying to `callbackify`
+expects:
 
 ```js
-export function addAsync(x, y, done=null) {
-    return pb.addCallback(done, Promise.resolve(x + y));
-}
+const newFunc = callbackify({ args: 2 }, async function(fn1, fn2) => ...);
 ```
 
-### pb.apply(fn, thisArg, args[, cb])
+**Kind**: global function  
 
-Much like [`Function.prototype.apply()`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/call),
-this calls a function, but this lets you call into a function when you don't know whether the
-function is expecting a callback or is going to return a Promise.  `fn` is the function you wish
-to call.  Under the hood, if `fn.length` is equal to `args.length`, this will call `fn`
-with the parameters provided, and then return the Promise (or wrap a returned value in a Promise).
-If `fn.length` is `args.length + 1`, then a callback will be added.
+| Param | Type | Description |
+| --- | --- | --- |
+| [opts] | <code>args</code> | An `` object specifying how many arguments your function   expects. |
+| fn |  | The async function to call. |
 
-If `cb` is provided, `apply` will call into `cb` with a result, otherwise `apply` will itself
-return a Promise.
+<a name="apply"></a>
 
-### pb.call(fn, thisArg[, arg1[, arg2[, ...]]))
+### apply(fn, thisArg, args, [cb]) ⇒
+`apply` is analagous to `Function.prototype.apply`, but you can use it to
+call a function when you don't know in advance whether the function expects
+a callback or will return a Promise. This is useful when writing a library
+and you want to call into functions provided by your end user.
 
-This is the [`Function.prototype.call()`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/call)
-equivalent of `apply()`.  Note that this always returns a Promise.  If you need a callback, use `callWithCb()`
-instead.
+**Kind**: global function  
+**Returns**: - If the underlying `fn` returns a Promise, this will return that
+  Promise.  Otherwise returns a Promise which will resolve or reject when the
+  callback is called.  
 
-Note that this is handy shortcut for promisifying a callback-based API:
+| Param | Description |
+| --- | --- |
+| fn | The function to call. |
+| thisArg | The `this` parameter to provide to the function. |
+| args | The parameters to pass to the function.  A callback function   will automatically be added to this list of parameters. |
+| [cb] | The callback function to call. |
 
+<a name="call"></a>
+
+### call(fn, thisArg, args) ⇒
+`call` is analagous to `Function.prototype.call`.  See `apply` for details.
+
+**Kind**: global function  
+**Returns**: - If the underlying `fn` returns a Promise, this will return that
+  Promise.  Otherwise returns a Promise which will resolve or reject when the
+  callback is called.  
+
+| Param | Description |
+| --- | --- |
+| fn | The function to call. |
+| thisArg | The `this` parameter to provide to the function. |
+| args | The parameters to pass to the function.  A callback function   will automatically be added to this list of parameters. |
+
+<a name="addPromise"></a>
+
+### addPromise(done, fn) ⇒
+Add a promise to a function that returns a callback.
+
+**Kind**: global function  
+**Returns**: If a callback is provided, returns undefined. Otherwise returns a Promise.  
+
+| Param | Description |
+| --- | --- |
+| done | The callback provided by your function's caller, or undefined if   no callback was provided. |
+| fn | A callback function to call as the implementation for your function. |
+
+**Example**  
 ```js
-pb.call(done => fs.readFile(filename, {encoding: 'utf8'}, done))
-.then(fileContents => ...);
+export function addNumbers(a: number, b: number): Promise<number>;
+    export function addNumbers(a: number, b: number, done: Callback<number>): void;
+    export function addNumbers(
+        a: number,
+        b: number,
+        done?: Callback<number>
+    ): Promise<number> | undefined {
+        return addPromise(done, (done) => done(null, a + b));
+    }
+
+    addNumbers(1, 2, (err, result) => console.log(result));
+    addNumbers(1, 2).then((result) => console.log(result));
 ```
+<a name="addCallback"></a>
 
-### pb.callWithCb(fn, argumentCount, thisArg[, arg1[, arg2[, ...[, cb]]]])
+### addCallback(done, fn) ⇒
+Add a callback to a function that returns a promise.
 
-Similar to `pb.call()`, but instead of returning a Promise this will call the provided callback.
+**Kind**: global function  
+**Returns**: If a callback is provided, returns undefined. Otherwise returns a Promise.  
 
-### pb.withPromise(promiseImpl)
+| Param | Description |
+| --- | --- |
+| done | The callback provided by your function's caller, or undefined if   no callback was provided. |
+| fn | An async function to call as the implementation for your function. |
 
-Returns a new `{make, break, addPromise, addCallback, apply, call, callWithCb}` object which uses the specified
-promiseImpl constructor to create new Promises.
+**Example**  
+```js
+export function addNumbers(a: number, b: number): Promise<number>;
+    export function addNumbers(a: number, b: number, done: Callback<number>): void;
+    export function addNumbers(
+        a: number,
+        b: number,
+        done?: Callback<number>
+    ): Promise<number> | undefined {
+        return addCallback(done, async () => return a + b);
+    }
+
+    addNumbers(1, 2, (err, result) => console.log(result));
+    addNumbers(1, 2).then((result) => console.log(result));
+```
